@@ -1,0 +1,2 @@
+src,dst,src_port,dst_port,proto,packet_count,total_bytes,start_time,end_time,duration,text
+146.75.122.172,192.168.187.196,80,37084,TCP,1,1334,1765642522.619247,1765642522.619247,0.0,Network flow using TCP protocol. Source 146.75.122.172:80 communicated with destination 192.168.187.196:37084. Packet count 1. Total bytes transferred 1334. Flow duration 0.0 seconds.
