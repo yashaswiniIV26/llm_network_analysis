@@ -1,68 +1,199 @@
 import streamlit as st
+import os
 import chromadb
-import requests
-import json
+from sentence_transformers import SentenceTransformer
+import subprocess
 import pandas as pd
 
-DB_DIR = "flow_db"
-OLLAMA_URL = "http://localhost:11434/api/generate"
+# =========================
+# Page Config
+# =========================
+st.set_page_config(page_title="AI Network Traffic Analysis", layout="wide")
+st.title("🔐 AI Network Traffic Analysis (SOC-Style MVP)")
 
-# --- Helpers ---
+# =========================
+# Constants
+# =========================
+PCAP_PATH = "uploaded.pcap"
+PACKETS_CSV = "packets.csv"
+FLOWS_CSV = "flows.csv"
+FLOW_TEXTS_CSV = "flow_texts.csv"
+DB_PATH = "flow_db"
+EMBED_MODEL_NAME = "all-mpnet-base-v2"
 
-def semantic_search(query):
-    db = chromadb.PersistentClient(path=DB_DIR)
+# =========================
+# Load Embedding Model
+# =========================
+@st.cache_resource
+def load_model():
+    return SentenceTransformer(EMBED_MODEL_NAME)
+
+embed_model = load_model()
+
+# =========================
+# Semantic Search
+# =========================
+def semantic_search(query, top_k=5):
+    db = chromadb.PersistentClient(path=DB_PATH)
     col = db.get_collection("flows")
-    results = col.query(query_texts=[query], n_results=5)
+
+    query_embedding = embed_model.encode([query]).tolist()
+    results = col.query(query_embeddings=query_embedding, n_results=top_k)
     return results["documents"][0]
 
-def ask_llm(context, question):
-    prompt = f"""
-You are a network security analyst.
-Here is network flow data:
+# =========================
+# Risk Scoring
+# =========================
+def compute_risk_score(flows):
+    score = 0
+    reasons = []
 
-{context}
+    text = " ".join(flows).lower()
 
-Question: {question}
+    if "unknown" in text:
+        score += 2
+        reasons.append("Unknown source or destination detected")
 
-Provide a detailed cybersecurity analysis.
-"""
+    if "udp" in text:
+        score += 2
+        reasons.append("UDP traffic observed")
 
-    data = {
-        "model": "llama3.2",
-        "prompt": prompt,
-        "stream": True
-    }
+    if "packet count 1" in text:
+        score += 1
+        reasons.append("Single-packet flow detected")
 
-    response = requests.post(OLLAMA_URL, json=data, stream=True)
+    if score == 0:
+        reasons.append("No anomalous patterns detected")
 
-    final_text = ""
-    for line in response.iter_lines():
-        if line:
-            try:
-                obj = json.loads(line.decode("utf-8"))
-                final_text += obj.get("response", "")
-            except:
-                continue
+    return min(score, 10), reasons
 
-    return final_text
+# =========================
+# MITRE Mapping
+# =========================
+def map_to_mitre(flows):
+    text = " ".join(flows).lower()
+    techniques = []
 
-# --- UI ---
+    if "tcp" in text or "http" in text:
+        techniques.append("T1071 – Application Layer Protocol")
 
-st.title("🔍 LLM Network Traffic Analysis")
-st.write("Search flows, view semantics, and get AI-driven threat analysis.")
+    if "udp" in text:
+        techniques.append("T1046 – Network Service Discovery")
 
-query = st.text_input("Enter your search or question:")
+    if "unknown" in text:
+        techniques.append("T1049 – System Network Connections Discovery")
+
+    if not techniques:
+        techniques.append("No clear MITRE ATT&CK technique detected")
+
+    return techniques
+
+# =========================
+# Mitigation Recommendations
+# =========================
+def recommend_actions(risk_score):
+    if risk_score <= 2:
+        return [
+            "No immediate action required",
+            "Continue monitoring network traffic",
+            "Maintain current security controls"
+        ]
+    elif risk_score <= 5:
+        return [
+            "Investigate affected endpoints",
+            "Review related logs and authentication attempts",
+            "Increase monitoring sensitivity"
+        ]
+    else:
+        return [
+            "Temporarily block suspicious IPs",
+            "Inspect endpoint for compromise",
+            "Escalate to incident response team"
+        ]
+
+# =========================
+# Sidebar Upload
+# =========================
+st.sidebar.header("📂 Upload PCAP")
+uploaded_file = st.sidebar.file_uploader("Upload a PCAP file", type=["pcap"])
+
+if uploaded_file:
+    with open(PCAP_PATH, "wb") as f:
+        f.write(uploaded_file.read())
+
+    st.sidebar.success("PCAP uploaded")
+
+    with st.spinner("Processing PCAP..."):
+        import extract_pcap, create_flows, flow_to_text, embed_flows
+        extract_pcap.run(PCAP_PATH, PACKETS_CSV)
+        create_flows.run(PACKETS_CSV, FLOWS_CSV)
+        flow_to_text.run(FLOWS_CSV, FLOW_TEXTS_CSV)
+        embed_flows.run(FLOW_TEXTS_CSV, DB_PATH)
+
+    st.sidebar.success("PCAP processed & indexed")
+
+# =========================
+# Main Query Panel
+# =========================
+st.subheader("🔎 Ask a Security Question")
+query = st.text_input("Example: Is this network traffic suspicious?")
 
 if st.button("Analyze"):
-    if query.strip() == "":
-        st.warning("Please enter a question or search.")
+    if not os.path.exists(DB_PATH):
+        st.error("Upload and process a PCAP first")
     else:
         flows = semantic_search(query)
-        st.subheader("🔎 Top Matching Flows")
-        for f in flows:
-            st.code(f)
+        risk_score, reasons = compute_risk_score(flows)
+        mitre = map_to_mitre(flows)
+        actions = recommend_actions(risk_score)
 
-        st.subheader("🤖 AI Security Analysis")
-        context = "\n".join(flows)
-        answer = ask_llm(context, query)
-        st.write(answer)
+        verdict = (
+            "BENIGN" if risk_score <= 2
+            else "NEEDS INVESTIGATION" if risk_score <= 5
+            else "POTENTIALLY SUSPICIOUS"
+        )
+
+        confidence = "HIGH" if risk_score <= 2 else "MEDIUM" if risk_score <= 5 else "LOW"
+
+        st.subheader("🧠 AI Security Analysis")
+        st.markdown(f"""
+**Verdict:** {verdict}  
+**Risk Score:** {risk_score} / 10  
+**Confidence:** {confidence}
+""")
+
+        st.markdown("**Key Reasons:**")
+        for r in reasons:
+            st.markdown(f"- {r}")
+
+        st.markdown("**MITRE ATT&CK Mapping:**")
+        for m in mitre:
+            st.markdown(f"- {m}")
+
+        st.markdown("**Recommended Actions:**")
+        for a in actions:
+            st.markdown(f"- {a}")
+
+        st.markdown("---")
+
+        prompt = f"""
+You are a SOC analyst.
+
+Relevant flows:
+{chr(10).join(flows)}
+
+Verdict: {verdict}
+Risk Score: {risk_score}
+Confidence: {confidence}
+
+Explain the assessment and recommendations briefly.
+"""
+
+        response = subprocess.run(
+            ["ollama", "run", "llama3.2", prompt],
+            capture_output=True,
+            text=True
+        )
+
+        st.markdown("### 🤖 AI Explanation")
+        st.write(response.stdout)

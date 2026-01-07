@@ -88,7 +88,8 @@ python -m streamlit run app.py
 
 📸 Screenshots
 
-Add screenshots inside screenshots/ and reference them here.
+ui_home.png
+ui_home.png
 
 📚 Future Enhancements
 

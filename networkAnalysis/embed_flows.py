@@ -1,36 +1,41 @@
 import pandas as pd
-from sentence_transformers import SentenceTransformer
 import chromadb
+from sentence_transformers import SentenceTransformer
 
-INPUT = "flow_texts.csv"
-DB_DIR = "flow_db"
+def run(text_file="flow_texts.csv", db_path="flow_db"):
+    """
+    Embed natural-language flow descriptions and store them in ChromaDB.
+    """
 
-def run():
-    # Load text data
-    df = pd.read_csv(INPUT)
-    
-    # Load embedding model
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    
-    # Create Chroma client
-    client = chromadb.PersistentClient(path=DB_DIR)
-    collection = client.get_or_create_collection(
-        name="flows",
-        metadata={"hnsw:space": "cosine"}
-    )
-    
-    # Generate embeddings and insert into DB
+    print("[INFO] Loading model...")
+    model = SentenceTransformer("all-mpnet-base-v2")
+
+    print("[INFO] Reading text file...")
+    df = pd.read_csv(text_file)
     texts = df["text"].tolist()
-    ids = [f"flow_{i}" for i in range(len(df))]
+
+    print("[INFO] Connecting to ChromaDB...")
+    db = chromadb.PersistentClient(path=db_path)
+
+    try:
+        col = db.get_collection("flows")
+        print("[INFO] Using existing collection.")
+    except:
+        col = db.create_collection("flows")
+        print("[INFO] Created new collection.")
+
+    print("[INFO] Generating embeddings...")
     embeddings = model.encode(texts).tolist()
-    
-    collection.add(
-        ids=ids,
+
+    print("[INFO] Storing embeddings...")
+    col.add(
         documents=texts,
-        embeddings=embeddings
+        embeddings=embeddings,
+        ids=[f"id_{i}" for i in range(len(texts))]
     )
-    
-    print("✔ Embeddings stored in ChromaDB!")
+
+    print("[OK] Embeddings stored successfully!")
+
 
 if __name__ == "__main__":
     run()

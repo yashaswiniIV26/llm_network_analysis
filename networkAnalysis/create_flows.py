@@ -1,39 +1,43 @@
 import pandas as pd
 
-# Input and output files
-PACKET_CSV = "flows.csv"     # from extract_pcap.py
-FLOW_CSV = "netflows.csv"    # new aggregated flows
+def run(packets_file="packets.csv", output_file="flows.csv"):
+    """
+    Convert packet-level CSV into flow-level aggregated CSV.
+    """
 
-def create_flows():
-    df = pd.read_csv(PACKET_CSV)
-
-    # 5-tuple (unique identifier for each flow)
-    flow_key = ["src", "dst", "src_port", "dst_port", "proto"]
-
-    # Group packets into flows
-    grouped = df.groupby(flow_key)
+    df = pd.read_csv(packets_file)
 
     flows = []
+    current = {}
 
-    for key, group in grouped:
-        flow = {
-            "src": key[0],
-            "dst": key[1],
-            "src_port": key[2],
-            "dst_port": key[3],
-            "proto": key[4],
-            "packet_count": len(group),
-            "total_bytes": group["length"].astype(int).sum(),
-            "start_time": group["ts"].min(),
-            "end_time": group["ts"].max(),
-            "duration": group["ts"].max() - group["ts"].min()
-        }
-        flows.append(flow)
+    for _, row in df.iterrows():
+        key = (row["src"], row["dst"], row["src_port"], row["dst_port"], row["proto"])
 
-    flow_df = pd.DataFrame(flows)
-    flow_df.to_csv(FLOW_CSV, index=False)
+        if key not in current:
+            current[key] = {
+                "src": row["src"],
+                "dst": row["dst"],
+                "src_port": row["src_port"],
+                "dst_port": row["dst_port"],
+                "proto": row["proto"],
+                "packet_count": 0,
+                "total_bytes": 0,
+                "start_time": row["ts"],
+                "end_time": row["ts"]
+            }
 
-    print(f"Wrote {FLOW_CSV} with {len(flow_df)} flows")
+        c = current[key]
+        c["packet_count"] += 1
+        c["total_bytes"] += row["length"]
+        c["end_time"] = row["ts"]
+
+    for _, value in current.items():
+        value["duration"] = value["end_time"] - value["start_time"]
+        flows.append(value)
+
+    pd.DataFrame(flows).to_csv(output_file, index=False)
+    print(f"[OK] Flows saved to {output_file}")
+
 
 if __name__ == "__main__":
-    create_flows()
+    run()

@@ -1,8 +1,6 @@
 venv/
-__pycache__/
 flow_db/
+__pycache__/
 *.pcap
-*.zip
-*.tmp
-*.log
-.DS_Store
+*.csv
+pcap.hash

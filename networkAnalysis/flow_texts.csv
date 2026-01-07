@@ -1,2 +1,4 @@
-src,dst,src_port,dst_port,proto,packet_count,total_bytes,start_time,end_time,duration,text
-146.75.122.172,192.168.187.196,80,37084,TCP,1,1334,1765642522.619247,1765642522.619247,0.0,Network flow using TCP protocol. Source 146.75.122.172:80 communicated with destination 192.168.187.196:37084. Packet count 1. Total bytes transferred 1334. Flow duration 0.0 seconds.
+text
+"Network flow observed using TCP protocol. Source address Unknown on port 80 communicated with destination address Unknown on port 37092. The flow consisted of 2 packets, transferring a total of 2740 bytes over a duration of 0.0023 seconds."
+"Network flow observed using TCP protocol. Source address Unknown on port 37092 communicated with destination address Unknown on port 80. The flow consisted of 2 packets, transferring a total of 196 bytes over a duration of 0.0022 seconds."
+"Network flow observed using TCP protocol. Source address 146.75.122.172 on port 80 communicated with destination address 192.168.187.196 on port 37084. The flow consisted of 1 packets, transferring a total of 1334 bytes over a duration of 0.0 seconds."
